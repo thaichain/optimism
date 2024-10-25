@@ -36,7 +36,13 @@ func (eq *EngDeriver) onPayloadProcess(ev PayloadProcessEvent) {
 	}
 	switch status.Status {
 	case eth.ExecutionInvalid, eth.ExecutionInvalidBlockHash:
-		// TODO: Do we also want to retry deposit-only attributes at this point?
+		// TODO: I'm not sure how derivation can reach this point. To my understand, it would
+		// already fail earlier during the FCU call.
+		if ev.DerivedFrom != (eth.L1BlockRef{}) && eq.cfg.IsHolocene(ev.DerivedFrom.Time) {
+			eq.emitDepositsOnlyPayloadAttributesRequest(ev.Ref.ParentHash, ev.DerivedFrom)
+			return
+		}
+
 		eq.emitter.Emit(PayloadInvalidEvent{
 			Envelope: ev.Envelope,
 			Err:      eth.NewPayloadErr(ev.Envelope.ExecutionPayload, status),

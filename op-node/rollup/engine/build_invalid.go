@@ -5,6 +5,8 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // BuildInvalidEvent is an internal engine event, to post-process upon invalid attributes.
@@ -39,20 +41,8 @@ func (eq *EngDeriver) onBuildInvalid(ev BuildInvalidEvent) {
 		return
 	}
 
-	// TODO: not sure if we have to check IsDerived, can we land here outside of derivation?
-	if eq.cfg.IsHolocene(ev.Attributes.DerivedFrom.Time) && ev.Attributes.IsDerived() {
-		eq.log.Warn("Holocene active, retrying deposits-only attributes")
-		retryingAttributes := ev.Attributes.WithDepositsOnly()
-
-		// let external derivers know so they can adapt accordingly
-		eq.emitter.Emit(derive.RetryingDepositsPayloadAttributesEvent{
-			OriginalAttributes: ev.Attributes,
-			RetryingAttributes: retryingAttributes,
-			Err:                ev.Err,
-		})
-
-		// attempt retry internally
-		eq.emitter.Emit(BuildStartEvent{retryingAttributes})
+	if ev.Attributes.IsDerived() && eq.cfg.IsHolocene(ev.Attributes.DerivedFrom.Time) {
+		eq.emitDepositsOnlyPayloadAttributesRequest(ev.Attributes.Parent.Hash, ev.Attributes.DerivedFrom)
 		return
 	}
 
@@ -69,4 +59,13 @@ func (eq *EngDeriver) onBuildInvalid(ev BuildInvalidEvent) {
 
 	// Signal that we deemed the attributes as unfit
 	eq.emitter.Emit(InvalidPayloadAttributesEvent(ev))
+}
+
+func (eq *EngDeriver) emitDepositsOnlyPayloadAttributesRequest(parentHash common.Hash, derivedFrom eth.L1BlockRef) {
+	eq.log.Warn("Holocene active, requesting deposits-only attributes")
+	// request deposits-only version
+	eq.emitter.Emit(derive.DepositsOnlyPayloadAttributesRequestEvent{
+		ParentHash:  parentHash,
+		DerivedFrom: derivedFrom,
+	})
 }

@@ -62,6 +62,7 @@ func (eq *AttributesHandler) OnEvent(ev event.Event) bool {
 		eq.onPendingSafeUpdate(x)
 	case derive.DerivedAttributesEvent:
 		eq.attributes = x.Attributes
+		eq.sentAttributes = false
 		eq.emitter.Emit(derive.ConfirmReceivedAttributesEvent{})
 		// to make sure we have a pre-state signal to process the attributes from
 		eq.emitter.Emit(engine.PendingSafeRequestEvent{})
@@ -98,13 +99,6 @@ func (eq *AttributesHandler) OnEvent(ev event.Event) bool {
 		eq.sentAttributes = false
 		eq.attributes = nil
 		eq.emitter.Emit(engine.PendingSafeRequestEvent{})
-	case derive.RetryingDepositsPayloadAttributesEvent:
-		if !x.OriginalAttributes.IsDerived() {
-			return true // from sequencing
-		}
-		// replace with retrying attributes
-		// TODO: not sure if even necessary
-		eq.attributes = x.RetryingAttributes
 	default:
 		return false
 	}

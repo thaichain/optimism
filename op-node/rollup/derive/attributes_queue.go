@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -48,12 +49,14 @@ func (a *AttributesWithParent) IsDerived() bool {
 }
 
 type AttributesQueue struct {
-	log          log.Logger
-	config       *rollup.Config
-	builder      AttributesBuilder
-	prev         SingularBatchProvider
+	log     log.Logger
+	config  *rollup.Config
+	builder AttributesBuilder
+	prev    SingularBatchProvider
+
 	batch        *SingularBatch
 	isLastInSpan bool
+	lastAttribs  *AttributesWithParent
 }
 
 type SingularBatchProvider interface {
@@ -98,6 +101,7 @@ func (aq *AttributesQueue) NextAttributes(ctx context.Context, parent eth.L2Bloc
 			IsLastInSpan: aq.isLastInSpan,
 			DerivedFrom:  aq.Origin(),
 		}
+		aq.lastAttribs = &attr
 		aq.batch = nil
 		aq.isLastInSpan = false
 		return &attr, nil
@@ -135,6 +139,7 @@ func (aq *AttributesQueue) createNextAttributes(ctx context.Context, batch *Sing
 func (aq *AttributesQueue) reset() {
 	aq.batch = nil
 	aq.isLastInSpan = false // overwritten later, but set for consistency
+	aq.lastAttribs = nil
 }
 
 func (aq *AttributesQueue) Reset(ctx context.Context, _ eth.L1BlockRef, _ eth.SystemConfig) error {
@@ -142,7 +147,24 @@ func (aq *AttributesQueue) Reset(ctx context.Context, _ eth.L1BlockRef, _ eth.Sy
 	return io.EOF
 }
 
-func (aq *AttributesQueue) FlushChannel() {
-	aq.reset()
-	aq.prev.FlushChannel()
+func (aq *AttributesQueue) DepositsOnlyAttributes(parentHash common.Hash, derivedFrom eth.L1BlockRef) (*AttributesWithParent, error) {
+	// Sanity checks - these cannot happen with correct deriver implementations.
+	if aq.batch != nil {
+		return nil, fmt.Errorf("unexpected buffered batch")
+	} else if aq.lastAttribs == nil {
+		return nil, fmt.Errorf("no attributes generated yet")
+	} else if derivedFrom != aq.lastAttribs.DerivedFrom {
+		return nil, fmt.Errorf(
+			"unexpected derivation origin, last_origin: %s, invalid_origin: %s",
+			aq.lastAttribs.DerivedFrom, derivedFrom)
+	} else if parentHash != aq.lastAttribs.Parent.Hash {
+		return nil, fmt.Errorf(
+			"unexpected parent: last_parent: %s, invalid_parent: %s",
+			aq.lastAttribs.Parent, parentHash)
+	}
+
+	aq.prev.FlushChannel() // flush all channel data in previous stages
+	attrs := aq.lastAttribs.WithDepositsOnly()
+	aq.lastAttribs = attrs
+	return attrs, nil
 }

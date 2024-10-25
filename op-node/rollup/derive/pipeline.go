@@ -134,8 +134,8 @@ func (dp *DerivationPipeline) Reset() {
 	dp.engineIsReset = false
 }
 
-func (dp *DerivationPipeline) FlushChannel() {
-	dp.attrib.FlushChannel() // calls FlushChannel recursively on previous stages
+func (dp *DerivationPipeline) DepositsOnlyAttributes(parentHash common.Hash, derivedFrom eth.L1BlockRef) (*AttributesWithParent, error) {
+	return dp.attrib.DepositsOnlyAttributes(parentHash, derivedFrom)
 }
 
 // Origin is the L1 block of the inner-most stage of the derivation pipeline,
