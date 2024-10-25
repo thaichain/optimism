@@ -6,7 +6,6 @@ import (
 
 	actionsHelpers "github.com/ethereum-optimism/optimism/op-e2e/actions/helpers"
 	"github.com/ethereum-optimism/optimism/op-e2e/actions/proofs/helpers"
-	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-program/client/claim"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -16,13 +15,13 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 
 	type testCase struct {
 		name        string
-		blocks      []uint // could enhance this to declare either singular or span batches or a mixture
+		blocks      []uint // blocks is an ordered list of blocks (by number) to add to a single channel.
 		isSpanBatch bool
 		holoceneExpectations
 	}
 
-	// An ordered list of blocks (by number) to add to a single channel.
-	// Depending on the list,  we expect a different progression of the safe head under Holocene
+	// Depending on the blocks list,  we expect a different
+	// progression of the safe head under Holocene
 	// derivation rules, compared with pre Holocene.
 	var testCases = []testCase{
 		// Standard channel composition
@@ -63,12 +62,7 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 
 	runHoloceneDerivationTest := func(gt *testing.T, testCfg *helpers.TestCfg[testCase]) {
 		t := actionsHelpers.NewDefaultTesting(gt)
-		tp := helpers.NewTestParams(func(tp *e2eutils.TestParams) {
-			// Set the channel timeout to 10 blocks, 12x lower than the sequencing window.
-			tp.ChannelTimeout = 10
-		})
-
-		env := helpers.NewL2FaultProofEnv(t, testCfg, tp, helpers.NewBatcherCfg())
+		env := helpers.NewL2FaultProofEnv(t, testCfg, helpers.NewTestParams(), helpers.NewBatcherCfg())
 
 		includeBatchTx := func() {
 			// Include the last transaction submitted by the batcher.
@@ -80,8 +74,6 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 			env.Miner.ActL1SafeNext(t)
 			env.Miner.ActL1FinalizeNext(t)
 		}
-
-		env.Batcher.ActCreateChannel(t, testCfg.Custom.isSpanBatch)
 
 		var max = func(input []uint) uint {
 			max := uint(0)
@@ -95,19 +87,17 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 
 		targetHeadNumber := max(testCfg.Custom.blocks)
 		for env.Engine.L2Chain().CurrentBlock().Number.Uint64() < uint64(targetHeadNumber) {
-
 			env.Sequencer.ActL2StartBlock(t)
-
 			// Send an L2 tx
 			env.Alice.L2.ActResetTxOpts(t)
 			env.Alice.L2.ActSetTxToAddr(&env.Dp.Addresses.Bob)
 			env.Alice.L2.ActMakeTx(t)
 			env.Engine.ActL2IncludeTx(env.Alice.Address())(t)
-
 			env.Sequencer.ActL2EndBlock(t)
 		}
 
 		// Buffer the blocks in the batcher.
+		env.Batcher.ActCreateChannel(t, testCfg.Custom.isSpanBatch)
 		for _, blockNum := range testCfg.Custom.blocks {
 			env.Batcher.ActAddBlockByNumber(t, int64(blockNum), actionsHelpers.BlockLogger(t))
 		}

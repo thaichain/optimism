@@ -18,7 +18,7 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 
 	type testCase struct {
 		name                    string
-		blocks                  []uint // could enhance this to declare either singular or span batches or a mixture
+		blocks                  []uint // An ordered list of blocks (by number) to add to a single channel.
 		isSpanBatch             bool
 		blockModifiers          []actionsHelpers.BlockModifier
 		breachMaxSequencerDrift bool
@@ -81,8 +81,7 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 		1, // is_last
 	}
 
-	// An ordered list of blocks (by number) to add to a single channel.
-	// Depending on these lists, whether the channel is built as
+	// Depending on the blocks list, whether the channel is built as
 	// as span batch channel, and whether the blocks are modified / invalidated
 	// we expect a different progression of the safe head under Holocene
 	// derivation rules, compared with pre Holocene.
@@ -139,7 +138,6 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 			env.Miner.ActL1StartBlock(12)(t)
 			env.Miner.ActL1IncludeTxByHash(env.Batcher.LastSubmitted.Hash())(t)
 			env.Miner.ActL1EndBlock(t)
-
 			// Finalize the block with the first channel frame on L1.
 			env.Miner.ActL1SafeNext(t)
 			env.Miner.ActL1FinalizeNext(t)
@@ -190,10 +188,10 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 		}
 
 		if testCfg.Custom.overAdvanceL1Origin {
+			// Here we bypass the sequencer entirely, and simply submit a hand rolled batcher tx
 			env.Batcher.ActL2BatchSubmitRaw(t, partiallyValidSpanBatchFrame)
 			includeBatchTx()
 		} else {
-
 			// Buffer the blocks in the batcher.
 			for i, blockNum := range testCfg.Custom.blocks {
 
