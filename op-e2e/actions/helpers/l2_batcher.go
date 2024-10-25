@@ -185,6 +185,14 @@ func (s *L2Batcher) ActCreateChannel(t Testing, useSpanChannelOut bool) {
 
 type BlockModifier = func(block *types.Block) *types.Block
 
+func BlockLogger(t e2eutils.TestingBase) BlockModifier {
+	f := func(block *types.Block) *types.Block {
+		t.Log("added block", "num", block.Number(), "txs", block.Transactions(), "time", block.Time())
+		return block
+	}
+	return f
+}
+
 func (s *L2Batcher) Buffer(t Testing, opts ...BlockModifier) error {
 	if s.l2Submitting { // break ongoing submitting work if necessary
 		s.L2ChannelOut = nil

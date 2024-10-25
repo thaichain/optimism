@@ -6,11 +6,9 @@ import (
 
 	actionsHelpers "github.com/ethereum-optimism/optimism/op-e2e/actions/helpers"
 	"github.com/ethereum-optimism/optimism/op-e2e/actions/proofs/helpers"
-	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-program/client/claim"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,12 +70,7 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 
 	runHoloceneDerivationTest := func(gt *testing.T, testCfg *helpers.TestCfg[testCase]) {
 		t := actionsHelpers.NewDefaultTesting(gt)
-		tp := helpers.NewTestParams(func(tp *e2eutils.TestParams) {
-			// Set the channel timeout to 10 blocks, 12x lower than the sequencing window.
-			tp.ChannelTimeout = 10
-		})
-
-		env := helpers.NewL2FaultProofEnv(t, testCfg, tp, helpers.NewBatcherCfg())
+		env := helpers.NewL2FaultProofEnv(t, testCfg, helpers.NewTestParams(), helpers.NewBatcherCfg())
 
 		includeBatchTx := func() {
 			// Include the last transaction submitted by the batcher.
@@ -95,29 +88,21 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 		blocks := []uint{1, 2, 3}
 		targetHeadNumber := 3
 		for env.Engine.L2Chain().CurrentBlock().Number.Uint64() < uint64(targetHeadNumber) {
-
 			env.Sequencer.ActL2StartBlock(t)
-
 			// Send an L2 tx
 			env.Alice.L2.ActResetTxOpts(t)
 			env.Alice.L2.ActSetTxToAddr(&env.Dp.Addresses.Bob)
 			env.Alice.L2.ActMakeTx(t)
 			env.Engine.ActL2IncludeTx(env.Alice.Address())(t)
-
 			env.Sequencer.ActL2EndBlock(t)
 		}
 
 		// Build up a local list of frames
 		orderedFrames := make([][]byte, 0, len(testCfg.Custom.frames))
 
-		blockLogger := func(block *types.Block) *types.Block {
-			t.Log("added block", "num", block.Number(), "txs", block.Transactions(), "time", block.Time(), "l1_origin")
-			return block
-		}
-
 		// Buffer the blocks in the batcherand populated orderedFrames list
 		for i, blockNum := range blocks {
-			env.Batcher.ActAddBlockByNumber(t, int64(blockNum), blockLogger)
+			env.Batcher.ActAddBlockByNumber(t, int64(blockNum), actionsHelpers.BlockLogger(t))
 			if i == len(blocks)-1 {
 				env.Batcher.ActL2ChannelClose(t)
 			}

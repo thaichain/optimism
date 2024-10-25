@@ -189,11 +189,6 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 			env.Sequencer.ActL2EndBlock(t)
 		}
 
-		blockLogger := func(block *types.Block) *types.Block {
-			t.Log("added block", "num", block.Number(), "txs", block.Transactions(), "time", block.Time(), "l1_origin")
-			return block
-		}
-
 		if testCfg.Custom.overAdvanceL1Origin {
 			env.Batcher.ActL2BatchSubmitRaw(t, partiallyValidSpanBatchFrame)
 			includeBatchTx()
@@ -206,7 +201,7 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 				if len(testCfg.Custom.blockModifiers) > i {
 					blockModifier = testCfg.Custom.blockModifiers[i]
 				}
-				env.Batcher.ActAddBlockByNumber(t, int64(blockNum), blockModifier, blockLogger)
+				env.Batcher.ActAddBlockByNumber(t, int64(blockNum), blockModifier, actionsHelpers.BlockLogger(t))
 
 			}
 			env.Batcher.ActL2ChannelClose(t)

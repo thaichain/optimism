@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-program/client/claim"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,14 +107,9 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 			env.Sequencer.ActL2EndBlock(t)
 		}
 
-		blockLogger := func(block *types.Block) *types.Block {
-			t.Log("added block", "num", block.Number(), "txs", block.Transactions(), "time", block.Time(), "l1_origin")
-			return block
-		}
-
 		// Buffer the blocks in the batcher.
 		for _, blockNum := range testCfg.Custom.blocks {
-			env.Batcher.ActAddBlockByNumber(t, int64(blockNum), blockLogger)
+			env.Batcher.ActAddBlockByNumber(t, int64(blockNum), actionsHelpers.BlockLogger(t))
 		}
 		env.Batcher.ActL2ChannelClose(t)
 		frame := env.Batcher.ReadNextOutputFrame(t)
