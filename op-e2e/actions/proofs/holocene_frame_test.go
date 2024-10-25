@@ -17,7 +17,7 @@ type holoceneExpectations struct {
 	safeHeadHolocene    uint64
 }
 
-func (h holoceneExpectations) AssertExpectedProgress(t actionsHelpers.StatefulTesting, actualSafeHead eth.L2BlockRef, isHolocene bool, engine *actionsHelpers.L2Engine) {
+func (h holoceneExpectations) RequireExpectedProgress(t actionsHelpers.StatefulTesting, actualSafeHead eth.L2BlockRef, isHolocene bool, engine *actionsHelpers.L2Engine) {
 	if isHolocene {
 		require.Equal(t, h.safeHeadPreHolocene, actualSafeHead.Number)
 		expectedHash := engine.L2Chain().GetBlockByNumber(h.safeHeadPreHolocene).Hash()
@@ -72,19 +72,6 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 		t := actionsHelpers.NewDefaultTesting(gt)
 		env := helpers.NewL2FaultProofEnv(t, testCfg, helpers.NewTestParams(), helpers.NewBatcherCfg())
 
-		includeBatchTx := func() {
-			// Include the last transaction submitted by the batcher.
-			env.Miner.ActL1StartBlock(12)(t)
-			env.Miner.ActL1IncludeTxByHash(env.Batcher.LastSubmitted.Hash())(t)
-			env.Miner.ActL1EndBlock(t)
-
-			// Finalize the block with the first channel frame on L1.
-			env.Miner.ActL1SafeNext(t)
-			env.Miner.ActL1FinalizeNext(t)
-		}
-
-		env.Batcher.ActCreateChannel(t, false)
-
 		blocks := []uint{1, 2, 3}
 		targetHeadNumber := 3
 		for env.Engine.L2Chain().CurrentBlock().Number.Uint64() < uint64(targetHeadNumber) {
@@ -99,8 +86,8 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 
 		// Build up a local list of frames
 		orderedFrames := make([][]byte, 0, len(testCfg.Custom.frames))
-
-		// Buffer the blocks in the batcherand populated orderedFrames list
+		// Buffer the blocks in the batcher and populat orderedFrames list
+		env.Batcher.ActCreateChannel(t, false)
 		for i, blockNum := range blocks {
 			env.Batcher.ActAddBlockByNumber(t, int64(blockNum), actionsHelpers.BlockLogger(t))
 			if i == len(blocks)-1 {
@@ -109,6 +96,17 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 			frame := env.Batcher.ReadNextOutputFrame(t)
 			require.NotEmpty(t, frame, "frame %d", i)
 			orderedFrames = append(orderedFrames, frame)
+		}
+
+		includeBatchTx := func() {
+			// Include the last transaction submitted by the batcher.
+			env.Miner.ActL1StartBlock(12)(t)
+			env.Miner.ActL1IncludeTxByHash(env.Batcher.LastSubmitted.Hash())(t)
+			env.Miner.ActL1EndBlock(t)
+
+			// Finalize the block with the first channel frame on L1.
+			env.Miner.ActL1SafeNext(t)
+			env.Miner.ActL1FinalizeNext(t)
 		}
 
 		// Submit frames in specified order order
@@ -123,7 +121,7 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 
 		l2SafeHead := env.Sequencer.L2Safe()
 
-		testCfg.Custom.AssertExpectedProgress(t, l2SafeHead, testCfg.Hardfork.Precedence < helpers.Holocene.Precedence, env.Engine)
+		testCfg.Custom.RequireExpectedProgress(t, l2SafeHead, testCfg.Hardfork.Precedence < helpers.Holocene.Precedence, env.Engine)
 
 		t.Log("Safe head progressed as expected", "l2SafeHeadNumber", l2SafeHead.Number)
 
