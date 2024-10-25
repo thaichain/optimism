@@ -16,11 +16,10 @@ import (
 func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 
 	type testCase struct {
-		name                string
-		blocks              []uint // could enhance this to declare either singular or span batches or a mixture
-		isSpanBatch         bool
-		safeHeadPreHolocene uint64
-		safeHeadHolocene    uint64
+		name        string
+		blocks      []uint // could enhance this to declare either singular or span batches or a mixture
+		isSpanBatch bool
+		holoceneExpectations
 	}
 
 	// An ordered list of blocks (by number) to add to a single channel.
@@ -28,24 +27,38 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 	// derivation rules, compared with pre Holocene.
 	var testCases = []testCase{
 		// Standard channel composition
-		{name: "case-0", blocks: []uint{1, 2, 3}, safeHeadPreHolocene: 3, safeHeadHolocene: 3},
+		{name: "case-0", blocks: []uint{1, 2, 3},
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3,
+				safeHeadHolocene:    3,
+			},
+		},
 
 		// Non-standard channel composition
 		{name: "case-2a", blocks: []uint{1, 3, 2},
-			safeHeadPreHolocene: 3, // batches are buffered, so the block ordering does not matter
-			safeHeadHolocene:    1, // batch for block 3 is considered invalid because it is from the future. This batch + remaining channel is dropped.
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // batches are buffered, so the block ordering does not matter
+				safeHeadHolocene:    1, // batch for block 3 is considered invalid because it is from the future. This batch + remaining channel is dropped.
+			},
 		},
 		{name: "case-2b", blocks: []uint{2, 1, 3},
-			safeHeadPreHolocene: 3, // batches are buffered, so the block ordering does not matter
-			safeHeadHolocene:    0, // batch for block 2 is considered invalid because it is from the future. This batch + remaining channel is dropped.
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // batches are buffered, so the block ordering does not matter
+				safeHeadHolocene:    0, // batch for block 2 is considered invalid because it is from the future. This batch + remaining channel is dropped.
+			},
 		},
+
 		{name: "case-2c", blocks: []uint{1, 1, 2, 3},
-			safeHeadPreHolocene: 3, // duplicate batches are silently dropped, so this reduceds to case-0
-			safeHeadHolocene:    3, // duplicate batches are silently dropped
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // duplicate batches are silently dropped, so this reduceds to case-0
+				safeHeadHolocene:    3, // duplicate batches are silently dropped
+			},
 		},
 		{name: "case-2d", blocks: []uint{2, 2, 1, 3},
-			safeHeadPreHolocene: 3, // duplicate batches are silently dropped, so this reduces to case-2b
-			safeHeadHolocene:    0, // duplicate batches are silently dropped, so this reduces to case-2b
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // duplicate batches are silently dropped, so this reduces to case-2b
+				safeHeadHolocene:    0, // duplicate batches are silently dropped, so this reduces to case-2b
+			},
 		},
 	}
 
@@ -115,16 +128,7 @@ func Test_ProgramAction_HoloceneBatches(gt *testing.T) {
 		env.Sequencer.ActL2PipelineFull(t)
 
 		l2SafeHead := env.Sequencer.L2Safe()
-
-		if testCfg.Hardfork.Precedence < helpers.Holocene.Precedence {
-			require.Equal(t, testCfg.Custom.safeHeadPreHolocene, l2SafeHead.Number)
-			expectedHash := env.Engine.L2Chain().GetBlockByNumber(testCfg.Custom.safeHeadPreHolocene).Hash()
-			require.Equal(t, expectedHash, l2SafeHead.Hash)
-		} else {
-			require.Equal(t, testCfg.Custom.safeHeadHolocene, l2SafeHead.Number)
-			expectedHash := env.Engine.L2Chain().GetBlockByNumber(testCfg.Custom.safeHeadHolocene).Hash()
-			require.Equal(t, expectedHash, l2SafeHead.Hash)
-		}
+		testCfg.Custom.AssertExpectedProgress(t, l2SafeHead, testCfg.Hardfork.Precedence < helpers.Holocene.Precedence, env.Engine)
 
 		t.Log("Safe head progressed as expected", "l2SafeHeadNumber", l2SafeHead.Number)
 

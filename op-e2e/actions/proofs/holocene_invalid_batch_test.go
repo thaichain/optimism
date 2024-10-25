@@ -21,10 +21,9 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 		blocks                  []uint // could enhance this to declare either singular or span batches or a mixture
 		isSpanBatch             bool
 		blockModifiers          []actionsHelpers.BlockModifier
-		safeHeadPreHolocene     uint64
-		safeHeadHolocene        uint64
 		breachMaxSequencerDrift bool
 		overAdvanceL1Origin     bool
+		holoceneExpectations
 	}
 
 	// invalidPayload invalidates the signature for the second transaction in the block.
@@ -89,28 +88,40 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 	// derivation rules, compared with pre Holocene.
 	var testCases = []testCase{
 		// Standard frame submission, standard channel composition
-		{name: "case-0", blocks: []uint{1, 2, 3}, safeHeadPreHolocene: 3, safeHeadHolocene: 3},
+		{name: "case-0", blocks: []uint{1, 2, 3},
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, safeHeadHolocene: 3,
+			},
+		},
 
 		{name: "case-3a", blocks: []uint{1, 2, 3}, blockModifiers: []actionsHelpers.BlockModifier{nil, invalidPayload, nil},
-			isSpanBatch:         true,
-			safeHeadPreHolocene: 0, // Invalid signature in block 2 causes an invalid _payload_ in the engine queue. Entire span batch is invalidated.
-			safeHeadHolocene:    0, // TODO with full Holocene implementation, we expect the safe head to move to 2 due to creation of an deposit-only block.
+			isSpanBatch: true,
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 0, // Invalid signature in block 2 causes an invalid _payload_ in the engine queue. Entire span batch is invalidated.
+				safeHeadHolocene:    0, // TODO with full Holocene implementation, we expect the safe head to move to 2 due to creation of an deposit-only block.
+			},
 		},
 		{name: "case-3b", blocks: []uint{1, 2, 3}, blockModifiers: []actionsHelpers.BlockModifier{nil, invalidParentHash, nil},
-			safeHeadPreHolocene: 1, // Invalid parentHash in block 2 causes an invalid batch to be derived.
-			safeHeadHolocene:    1, // Invalid parentHash in block 2 causes an invalid batch to be derived. This batch + remaining channel is dropped.
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 1, // Invalid parentHash in block 2 causes an invalid batch to be derived.
+				safeHeadHolocene:    1, // Invalid parentHash in block 2 causes an invalid batch to be derived. This batch + remaining channel is dropped.
+			},
 		},
 		{name: "case-3c", blocks: twoThousandBlocks, // if we artificially stall the l1 origin, this should be enough to trigger violation of the max sequencer drift
 			isSpanBatch:             true,
-			safeHeadPreHolocene:     0, // entire span batch invalidated
-			safeHeadHolocene:        0, // TODO we expect partial validity, safe head should move to  block 1800. So far only pending safe head moves.
 			breachMaxSequencerDrift: true,
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 0, // entire span batch invalidated
+				safeHeadHolocene:    0, // TODO we expect partial validity, safe head should move to  block 1800. So far only pending safe head moves.
+			},
 		},
 		{name: "case-3d",
 			isSpanBatch:         true,
-			safeHeadPreHolocene: 0,    // entire span batch invalidated
-			safeHeadHolocene:    0,    // TODO we expect partial validity, safe head should move to block 1.  So far only pending safe head moves.
 			overAdvanceL1Origin: true, // this will trigger the use of the partiallyValidSpanBatchFrame any bypass the sequencer entirely
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 0, // entire span batch invalidated
+				safeHeadHolocene:    0, // TODO we expect partial validity, safe head should move to block 1.  So far only pending safe head moves.
+			},
 		},
 	}
 
@@ -211,15 +222,7 @@ func Test_ProgramAction_HoloceneInvalidBatch(gt *testing.T) {
 
 		l2SafeHead := env.Sequencer.L2Safe()
 
-		if testCfg.Hardfork.Precedence < helpers.Holocene.Precedence {
-			require.Equal(t, testCfg.Custom.safeHeadPreHolocene, l2SafeHead.Number)
-			expectedHash := env.Engine.L2Chain().GetBlockByNumber(testCfg.Custom.safeHeadPreHolocene).Hash()
-			require.Equal(t, expectedHash, l2SafeHead.Hash)
-		} else {
-			require.Equal(t, testCfg.Custom.safeHeadHolocene, l2SafeHead.Number)
-			expectedHash := env.Engine.L2Chain().GetBlockByNumber(testCfg.Custom.safeHeadHolocene).Hash()
-			require.Equal(t, expectedHash, l2SafeHead.Hash)
-		}
+		testCfg.Custom.AssertExpectedProgress(t, l2SafeHead, testCfg.Hardfork.Precedence < helpers.Holocene.Precedence, env.Engine)
 
 		t.Log("Safe head progressed as expected", "l2SafeHeadNumber", l2SafeHead.Number)
 

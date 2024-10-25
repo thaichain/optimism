@@ -8,18 +8,34 @@ import (
 	"github.com/ethereum-optimism/optimism/op-e2e/actions/proofs/helpers"
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-program/client/claim"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
 
+type holoceneExpectations struct {
+	safeHeadPreHolocene uint64
+	safeHeadHolocene    uint64
+}
+
+func (h holoceneExpectations) AssertExpectedProgress(t actionsHelpers.StatefulTesting, actualSafeHead eth.L2BlockRef, isHolocene bool, engine *actionsHelpers.L2Engine) {
+	if isHolocene {
+		require.Equal(t, h.safeHeadPreHolocene, actualSafeHead.Number)
+		expectedHash := engine.L2Chain().GetBlockByNumber(h.safeHeadPreHolocene).Hash()
+		require.Equal(t, expectedHash, actualSafeHead.Hash)
+	} else {
+		require.Equal(t, h.safeHeadHolocene, actualSafeHead.Number)
+		expectedHash := engine.L2Chain().GetBlockByNumber(h.safeHeadHolocene).Hash()
+		require.Equal(t, expectedHash, actualSafeHead.Hash)
+	}
+}
 func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 
 	type testCase struct {
-		name                string
-		frames              []uint
-		safeHeadPreHolocene uint64
-		safeHeadHolocene    uint64
+		name   string
+		frames []uint
+		holoceneExpectations
 	}
 
 	// An ordered list of frames to read from the channel and submit
@@ -27,20 +43,30 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 	// derivation rules, compared with pre Holocene.
 	var testCases = []testCase{
 		// Standard frame submission,
-		{name: "case-0", frames: []uint{0, 1, 2}, safeHeadPreHolocene: 3, safeHeadHolocene: 3},
+		{name: "case-0", frames: []uint{0, 1, 2},
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3,
+				safeHeadHolocene:    3},
+		},
 
 		// Non-standard frame submission
 		{name: "case-1a", frames: []uint{2, 1, 0},
-			safeHeadPreHolocene: 3, // frames are buffered, so ordering does not matter
-			safeHeadHolocene:    0, // non-first frames will be dropped b/c it is the first seen with that channel Id. The safe head won't move until the channel is closed/completed.
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // frames are buffered, so ordering does not matter
+				safeHeadHolocene:    0, // non-first frames will be dropped b/c it is the first seen with that channel Id. The safe head won't move until the channel is closed/completed.
+			},
 		},
 		{name: "case-1b", frames: []uint{0, 1, 0, 2},
-			safeHeadPreHolocene: 3, // frames are buffered, so ordering does not matter
-			safeHeadHolocene:    0, // non-first frames will be dropped b/c it is the first seen with that channel Id. The safe head won't move until the channel is closed/completed.
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // frames are buffered, so ordering does not matter
+				safeHeadHolocene:    0, // non-first frames will be dropped b/c it is the first seen with that channel Id. The safe head won't move until the channel is closed/completed.
+			},
 		},
 		{name: "case-1c", frames: []uint{0, 1, 1, 2},
-			safeHeadPreHolocene: 3, // frames are buffered, so ordering does not matter
-			safeHeadHolocene:    3, // non-contiguous frames are dropped. So this reduces to case-0.
+			holoceneExpectations: holoceneExpectations{
+				safeHeadPreHolocene: 3, // frames are buffered, so ordering does not matter
+				safeHeadHolocene:    3, // non-contiguous frames are dropped. So this reduces to case-0.
+			},
 		},
 	}
 
@@ -112,15 +138,7 @@ func Test_ProgramAction_HoloceneFrames(gt *testing.T) {
 
 		l2SafeHead := env.Sequencer.L2Safe()
 
-		if testCfg.Hardfork.Precedence < helpers.Holocene.Precedence {
-			require.Equal(t, testCfg.Custom.safeHeadPreHolocene, l2SafeHead.Number)
-			expectedHash := env.Engine.L2Chain().GetBlockByNumber(testCfg.Custom.safeHeadPreHolocene).Hash()
-			require.Equal(t, expectedHash, l2SafeHead.Hash)
-		} else {
-			require.Equal(t, testCfg.Custom.safeHeadHolocene, l2SafeHead.Number)
-			expectedHash := env.Engine.L2Chain().GetBlockByNumber(testCfg.Custom.safeHeadHolocene).Hash()
-			require.Equal(t, expectedHash, l2SafeHead.Hash)
-		}
+		testCfg.Custom.AssertExpectedProgress(t, l2SafeHead, testCfg.Hardfork.Precedence < helpers.Holocene.Precedence, env.Engine)
 
 		t.Log("Safe head progressed as expected", "l2SafeHeadNumber", l2SafeHead.Number)
 
